@@ -52,17 +52,25 @@
             width: 100%;
             border-radius: 8px;
             margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        .searchLabel{
+          font-size: 15px;
+          font-weight:bold;
         }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>Nearest Bus Stop Finder</h1>
+        <h1>Yangon Bus Stop Tracker & Alert System</h1>
         <div id="dataStatus" class="location-status"></div>
         <div id="locationStatus" class="location-status"></div>
         <div id="nearestStop"></div>
         <div id="map"></div>
-        <label for="destinationSearch">Search your destination stop:</label>
+<!-- Add this after #nearestStop and before #map -->
+<p id="selectedDestinationLabel" style="font-weight: bold; color: #333;"></p>
+
+        <label for="destinationSearch" class="searchLabel">Search your destination stop and pickup:</label>
   <input list="stopOptions" id="destinationSearch" placeholder="Type to search...">
   <datalist id="stopOptions"></datalist>
   <audio id="alarmSound" src="alarm.mp3" preload="auto"></audio>
@@ -246,26 +254,41 @@ const stopOptions = document.getElementById('stopOptions');
 
 busStops.forEach((stop) => {
     const option = document.createElement('option');
-    option.value = `${stop.name_en} (${stop.road_en})`;
+    option.value = `${stop.name_mm} (${stop.road_mm}) / ${stop.name_en} (${stop.road_en})`;
+
     stopOptions.appendChild(option);
 });
 
 
 destinationInput.addEventListener('change', function () {
     const inputValue = this.value.toLowerCase();
-    selectedStop = busStops.find(stop =>
-        (`${stop.name_en} (${stop.road_en})`.toLowerCase() === inputValue)
-    );
-    
+
+    selectedStop = busStops.find(stop => {
+        const mmValue = `${stop.name_mm} (${stop.road_mm})`.toLowerCase();
+        const enValue = `${stop.name_en} (${stop.road_en})`.toLowerCase();
+        const bothValue = `${stop.name_mm} (${stop.road_mm}) / ${stop.name_en} (${stop.road_en})`.toLowerCase();
+
+        return (
+            inputValue === mmValue ||
+            inputValue === enValue ||
+            inputValue === bothValue
+        );
+    });
+
     hasAlerted = false;
+    const label = document.getElementById('selectedDestinationLabel');
+
 
     if (selectedStop) {
-        alert(`Selected destination: ${selectedStop.name_en}`);
+        alert(`🎯 ရွေးချယ်ခဲ့သောမှတ်တိုင်: ${selectedStop.name_mm}`);
+        label.textContent = `Selected Stop: ${selectedStop.name_en} (${selectedStop.road_en})`;
     } else {
-        alert("❌ Stop not found. Please choose from the list.");
+        alert("❌ မှတ်တိုင်မတွေ့ပါ။ စာရင်းထဲမှရွေးပါ။");
+        label.textContent = "";
         selectedStop = null;
     }
 });
+
 
 
 
