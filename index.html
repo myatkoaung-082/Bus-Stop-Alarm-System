@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nearest Bus Stop Finder</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .location-status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #e6ffe6;
+            color: #006600;
+        }
+        .error {
+            background: #ffe6e6;
+            color: #660000;
+        }
+        .loading {
+            background: #e6f3ff;
+            color: #003366;
+        }
+        .bus-stop {
+            border-left: 4px solid #4CAF50;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .distance {
+            font-weight: bold;
+            color: #2196F3;
+        }
+        #map {
+            height: 400px;
+            width: 100%;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Nearest Bus Stop Finder</h1>
+        <div id="dataStatus" class="location-status"></div>
+        <div id="locationStatus" class="location-status"></div>
+        <div id="nearestStop"></div>
+        <div id="map"></div>
+        <label for="destinationSearch">Search your destination stop:</label>
+  <input list="stopOptions" id="destinationSearch" placeholder="Type to search...">
+  <datalist id="stopOptions"></datalist>
+  <audio id="alarmSound" src="alarm.mp3" preload="auto"></audio>
+    </div>
+
+    <script>
+      let selectedStop = null;
+let hasAlerted = false;
+
+        let busStops = [];
+        let map, userMarker, stopMarker;
+
+        // Load bus stop data
+        const jsonFilePath = 'https://api.jsonsilo.com/public/eb13106b-87ea-4712-9024-c818435d4615';
+        const dataStatus = document.getElementById('dataStatus');
+
+        // Initialize map
+        function initMap(lat, lng) {
+            if (!map) {
+                map = L.map('map').setView([lat, lng], 15);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(map);
+                
+                userMarker = L.circleMarker([lat, lng], {
+                    radius: 8,
+                    fillColor: '#2196F3',
+                    color: '#fff',
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(map);
+            } else {
+                userMarker.setLatLng([lat, lng]);
+                map.setView([lat, lng]);
+            }
+        }
+
+        // Update map with nearest stop
+        function updateMapWithNearestStop(stop) {
+            if (!map) return;
+            
+            if (stopMarker) {
+                map.removeLayer(stopMarker);
+            }
+
+            stopMarker = L.marker([stop.lat, stop.lng])
+                .bindPopup(`<b>${stop.name_en}</b><br>${stop.road_en}`)
+                .addTo(map);
+
+            let bounds = L.latLngBounds([
+                [stop.lat, stop.lng],
+                [userMarker.getLatLng().lat, userMarker.getLatLng().lng]
+            ]);
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        // Calculate distance between points
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        // Find nearest bus stop
+        function findNearestStop(userLat, userLng) {
+            if (busStops.length === 0) return null;
+
+            let nearestStop = null;
+            let shortestDistance = Infinity;
+
+            busStops.forEach(stop => {
+                const distance = calculateDistance(userLat, userLng, stop.lat, stop.lng);
+                if (distance < shortestDistance) {
+                    shortestDistance = distance;
+                    nearestStop = { ...stop, distance };
+                }
+            });
+
+            return nearestStop;
+        }
+
+        // Update UI with nearest stop info
+        function updateNearestStopUI(stop) {
+            const nearestStopDiv = document.getElementById('nearestStop');
+            if (!stop) {
+                nearestStopDiv.innerHTML = '<p>No bus stop data available</p>';
+                return;
+            }
+            
+            nearestStopDiv.innerHTML = `
+                <div class="bus-stop">
+                    <h2>Nearest Bus Stop</h2>
+                    <p>Name: ${stop.name_en} (${stop.name_mm})</p>
+                    <p>Road: ${stop.road_en} (${stop.road_mm})</p>
+                    <p>Township: ${stop.township_en} (${stop.township_mm})</p>
+                    <p>Distance: <span class="distance">${stop.distance.toFixed(2)} km</span></p>
+                </div>
+            `;
+        }
+
+        // Track user location
+        function trackLocation() {
+            const statusDiv = document.getElementById('locationStatus');
+
+            if (!navigator.geolocation) {
+                statusDiv.innerHTML = 'Geolocation is not supported by your browser';
+                statusDiv.className = 'location-status error';
+                return;
+            }
+
+            function success(position) {
+                const latitude = position.coords.latitude;
+                const longitude = position.coords.longitude;
+
+                statusDiv.innerHTML = 'Location found!';
+                statusDiv.className = 'location-status success';
+
+                initMap(latitude, longitude);
+                const nearestStop = findNearestStop(latitude, longitude);
+                updateNearestStopUI(nearestStop);
+                if (nearestStop) {
+                    updateMapWithNearestStop(nearestStop);
+                }
+                // Check if user is near selected stop
+if (selectedStop) {
+    const proximity = calculateDistance(latitude, longitude, selectedStop.lat, selectedStop.lng);
+    console.log(`Proximity to destination: ${proximity * 1000} meters`);
+    if (proximity < 0.1 && !hasAlerted) { // < 100 meters
+        document.getElementById('alarmSound').play();
+        alert("📍 You're near your selected bus stop!");
+        hasAlerted = true;
+    }
+}
+
+            }
+
+            function error() {
+                statusDiv.innerHTML = 'Unable to retrieve your location';
+                statusDiv.className = 'location-status error';
+            }
+
+            statusDiv.innerHTML = 'Locating...';
+            statusDiv.className = 'location-status loading';
+
+            const options = {
+                maximumAge: 10000,
+                timeout: 5000,
+                enableHighAccuracy: true
+            };
+
+            navigator.geolocation.watchPosition(success, error, options);
+        }
+
+        // Fetch bus stop data and initialize
+        fetch(jsonFilePath)
+            .then(response => response.json())
+            .then(data => {
+                busStops = data.records.map(record => ({
+                    id: record[0],
+                    service_name: record[1],
+                    sequence: record[2],
+                    bus_stop_id: record[3],
+                    name_en: record[4],
+                    name_mm: record[5],
+                    road_en: record[6],
+                    road_mm: record[7],
+                    township_en: record[8],
+                    township_mm: record[9],
+                    lat: record[10],
+                    lng: record[11]
+                }));
+                const destinationInput = document.getElementById('destinationSearch');
+const stopOptions = document.getElementById('stopOptions');
+
+busStops.forEach((stop) => {
+    const option = document.createElement('option');
+    option.value = `${stop.name_en} (${stop.road_en})`;
+    stopOptions.appendChild(option);
+});
+
+
+destinationInput.addEventListener('change', function () {
+    const inputValue = this.value.toLowerCase();
+    selectedStop = busStops.find(stop =>
+        (`${stop.name_en} (${stop.road_en})`.toLowerCase() === inputValue)
+    );
+    
+    hasAlerted = false;
+
+    if (selectedStop) {
+        alert(`Selected destination: ${selectedStop.name_en}`);
+    } else {
+        alert("❌ Stop not found. Please choose from the list.");
+        selectedStop = null;
+    }
+});
+
+
+
+                dataStatus.innerHTML = 'Bus stop data loaded successfully!';
+                dataStatus.className = 'location-status success';
+                trackLocation();
+            })
+            .catch(error => {
+                dataStatus.innerHTML = 'Error loading bus stop data: ' + error.message;
+                dataStatus.className = 'location-status error';
+            });
+    </script>
+</body>
+</html>
