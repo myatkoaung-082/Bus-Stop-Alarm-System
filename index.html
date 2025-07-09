@@ -205,7 +205,7 @@ let hasAlerted = false;
 if (selectedStop) {
     const proximity = calculateDistance(latitude, longitude, selectedStop.lat, selectedStop.lng);
     console.log(`Proximity to destination: ${proximity * 1000} meters`);
-    if (proximity < 0.1 && !hasAlerted) { // < 100 meters
+    if (proximity < 0.50 && !hasAlerted) { // < 100 meters
         document.getElementById('alarmSound').play();
         alert("📍 You're near your selected bus stop!");
         hasAlerted = true;
